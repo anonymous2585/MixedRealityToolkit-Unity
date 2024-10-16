@@ -19,6 +19,7 @@ namespace MixedReality.Toolkit.Editor
         // All vectors / distances are in local space.
         private struct ButtonInfo
         {
+            public PressableButton PressableButton;
             public Vector3 LocalCenter;
             public Vector2 PlaneExtents;
 
@@ -36,10 +37,9 @@ namespace MixedReality.Toolkit.Editor
 
         private static GUIStyle labelStyle;
 
-        private PressableButton button;
-        private Transform transform;
+        private PressableButton[] buttons;
 
-        private ButtonInfo currentInfo;
+        private ButtonInfo[] currentInfos;
 
         private SerializedProperty distanceSpaceMode;
         private SerializedProperty startPushPlane;
@@ -62,8 +62,11 @@ namespace MixedReality.Toolkit.Editor
         {
             base.OnEnable();
 
-            button = (PressableButton)target;
-            transform = button.transform;
+            buttons = new PressableButton[targets.Length];
+            for (int i = 0; i < targets.Length; i++)
+            {
+                buttons[i] = (PressableButton)targets[i];
+            }
 
             if (labelStyle == null)
             {
@@ -90,36 +93,35 @@ namespace MixedReality.Toolkit.Editor
         [DrawGizmo(GizmoType.Selected)]
         private void OnSceneGUI()
         {
-
             if (!VisiblePlanes)
             {
                 return;
             }
 
-            if (button == null)
-            {
-                return;
-            }
-
-            serializedObject.Update();
-            currentInfo = GatherCurrentInfo();
-            DrawButtonInfo(currentInfo, EditingEnabled);
+            currentInfos = GatherCurrentInfo();
+            DrawButtonsInfo(currentInfos, EditingEnabled);
         }
 
-        private ButtonInfo GatherCurrentInfo()
+        private ButtonInfo[] GatherCurrentInfo()
         {
-            BoxCollider collider = button.GetComponentInChildren<BoxCollider>();
-            return new ButtonInfo
+            ButtonInfo[] result = new ButtonInfo[buttons.Length];
+            for (int i = 0; i < buttons.Length; i++)
             {
-                // null coalesce safe as we're checking it in the same frame as we get it!
-                LocalCenter = collider?.center ?? Vector3.zero,
-                PlaneExtents = collider?.size ?? Vector3.zero,
-                StartPushPlane = startPushPlane.floatValue,
-                EndPushPlane = endPushPlane.floatValue
-            };
+                BoxCollider collider = buttons[i].GetComponentInChildren<BoxCollider>();
+                result[i] = new ButtonInfo
+                {
+                    PressableButton = buttons[i],
+                    // null coalesce safe as we're checking it in the same frame as we get it!
+                    LocalCenter = collider?.center ?? Vector3.zero,
+                    PlaneExtents = collider?.size ?? Vector3.zero,
+                    StartPushPlane = buttons[i].StartPushPlane,
+                    EndPushPlane = buttons[i].EndPushPlane
+                };
+            }
+            return result;
         }
 
-        private void DrawButtonInfo(ButtonInfo info, bool editingEnabled)
+        private void DrawButtonsInfo(ButtonInfo[] info, bool editingEnabled)
         {
             if (editingEnabled)
             {
@@ -130,44 +132,74 @@ namespace MixedReality.Toolkit.Editor
             bool isOpaque = targetBehaviour.isActiveAndEnabled;
             float alpha = (isOpaque) ? 1.0f : 0.5f;
 
-            // START PUSH
-            Handles.color = ApplyAlpha(Color.cyan, alpha);
-            float newStartPushDistance = DrawPlaneAndHandle(startPlaneVertices, info.PlaneExtents * 0.5f, info.StartPushPlane, info, "Start Push Plane", editingEnabled);
-            if (editingEnabled && newStartPushDistance != info.StartPushPlane)
+            for (int i = 0; i < info.Length; i++)
             {
-                info.StartPushPlane = Mathf.Min(newStartPushDistance, info.EndPushPlane);
-            }
+                // START PUSH
+                Handles.color = ApplyAlpha(Color.cyan, alpha);
+                float newStartPushDistance = DrawPlaneAndHandle(startPlaneVertices, info[i].PlaneExtents * 0.5f, info[i].StartPushPlane, info[i], "Start Push Plane", editingEnabled);
+                if (editingEnabled && newStartPushDistance != info[i].StartPushPlane)
+                {
+                    // Set the same value for all selected buttons
+                    for (int j = 0; j < info.Length; j++)
+                    {
+                        info[j].StartPushPlane = Mathf.Min(newStartPushDistance, info[i].EndPushPlane);
+                        // Maybe the button had lower EndPushPlane than the manually modified button, so we need to update its own EndPushPlane
+                        if (info[j].StartPushPlane > info[j].EndPushPlane)
+                        {
+                            info[j].EndPushPlane = info[j].StartPushPlane;
+                        }
+                    }
+                }
 
-            // MAX PUSH
-            var purple = new Color(0.28f, 0.0f, 0.69f);
-            Handles.color = ApplyAlpha(purple, alpha);
-            float newMaxPushDistance = DrawPlaneAndHandle(endPlaneVertices, info.PlaneExtents * 0.5f, info.EndPushPlane, info, "End Push Plane", editingEnabled);
-            if (editingEnabled && newMaxPushDistance != info.EndPushPlane)
-            {
-                info.EndPushPlane = Mathf.Max(newMaxPushDistance, info.StartPushPlane);
+                // MAX PUSH
+                var purple = new Color(0.28f, 0.0f, 0.69f);
+                Handles.color = ApplyAlpha(purple, alpha);
+                float newMaxPushDistance = DrawPlaneAndHandle(endPlaneVertices, info[i].PlaneExtents * 0.5f, info[i].EndPushPlane, info[i], "End Push Plane", editingEnabled);
+                if (editingEnabled && newMaxPushDistance != info[i].EndPushPlane)
+                {
+                    // Set the same value for all selected buttons
+                    for (int j = 0; j < info.Length; j++)
+                    {
+                        info[j].EndPushPlane = Mathf.Max(newMaxPushDistance, info[i].StartPushPlane);
+                        // The button can have higher StartPushPlane than the manually modified button, so we need to update its own StartPushPlane
+                        if (info[j].EndPushPlane < info[j].StartPushPlane)
+                        {
+                            info[j].StartPushPlane = info[j].EndPushPlane;
+                        }
+                    }
+                }
+
+                // Draw dotted lines showing path from beginning to end of button path
+                Handles.color = Color.Lerp(Color.cyan, Color.clear, 0.25f);
+                Handles.DrawDottedLine(startPlaneVertices[0], endPlaneVertices[0], 2.5f);
+                Handles.DrawDottedLine(startPlaneVertices[1], endPlaneVertices[1], 2.5f);
+                Handles.DrawDottedLine(startPlaneVertices[2], endPlaneVertices[2], 2.5f);
+                Handles.DrawDottedLine(startPlaneVertices[3], endPlaneVertices[3], 2.5f);
             }
 
             if (editingEnabled && EditorGUI.EndChangeCheck())
             {
-                Undo.RecordObject(target, string.Concat("Modify Button Planes of ", button.name));
+                if (buttons.Length == 1)
+                {
+                    Undo.RecordObject(buttons[0], string.Concat("Modify Button Planes of ", buttons[0].name));
+                }
+                else
+                {
+                    Undo.RecordObjects(buttons, "Modify Button Planes of multiple PressableButton");
+                }
 
-                startPushPlane.floatValue = info.StartPushPlane;
-                endPushPlane.floatValue = info.EndPushPlane;
-
-                serializedObject.ApplyModifiedProperties();
+                for (int i = 0; i < info.Length; i++)
+                {
+                    buttons[i].StartPushPlane = info[i].StartPushPlane;
+                    buttons[i].EndPushPlane = info[i].EndPushPlane;
+                }
             }
-
-            // Draw dotted lines showing path from beginning to end of button path
-            Handles.color = Color.Lerp(Color.cyan, Color.clear, 0.25f);
-            Handles.DrawDottedLine(startPlaneVertices[0], endPlaneVertices[0], 2.5f);
-            Handles.DrawDottedLine(startPlaneVertices[1], endPlaneVertices[1], 2.5f);
-            Handles.DrawDottedLine(startPlaneVertices[2], endPlaneVertices[2], 2.5f);
-            Handles.DrawDottedLine(startPlaneVertices[3], endPlaneVertices[3], 2.5f);
         }
 
         private float DrawPlaneAndHandle(Vector3[] vertices, Vector2 halfExtents, float distance, ButtonInfo info, string label, bool editingEnabled)
         {
-            Vector3 centerWorld = transform.TransformPoint(new Vector3(info.LocalCenter.x, info.LocalCenter.y, button.GetLocalPositionAlongPushDirection(distance).z));
+            Transform transform = info.PressableButton.transform;
+            Vector3 centerWorld = transform.TransformPoint(new Vector3(info.LocalCenter.x, info.LocalCenter.y, info.PressableButton.GetLocalPositionAlongPushDirection(distance).z));
             MakeQuadFromPoint(vertices, centerWorld, halfExtents, info);
 
             if (VisiblePlanes)
@@ -192,7 +224,7 @@ namespace MixedReality.Toolkit.Editor
             {
                 float handleSize = HandleUtility.GetHandleSize(vertices[1]) * 0.15f;
 
-                Vector3 planeNormal = button.transform.forward;
+                Vector3 planeNormal = info.PressableButton.transform.forward;
                 Handles.ArrowHandleCap(0, vertices[1], Quaternion.LookRotation(planeNormal), handleSize * 2, EventType.Repaint);
                 Handles.ArrowHandleCap(0, vertices[1], Quaternion.LookRotation(-planeNormal), handleSize * 2, EventType.Repaint);
 
@@ -204,7 +236,7 @@ namespace MixedReality.Toolkit.Editor
 
                 if (!newPosition.Equals(vertices[1]))
                 {
-                    distance = button.GetDistanceAlongPushDirection(newPosition);
+                    distance = info.PressableButton.GetDistanceAlongPushDirection(newPosition);
                 }
             }
 
@@ -221,10 +253,14 @@ namespace MixedReality.Toolkit.Editor
 
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
-                PressableButton pressableButton = target as PressableButton;
+                TimedFlag[] pressableButtons = new TimedFlag[targets.Length];
+                for (int i = 0; i < targets.Length; i++)
+                {
+                    pressableButtons[i] = ((PressableButton)targets[i]).IsProximityHovered;
+                }
                 EditorGUILayout.LabelField("PressableButton Events", EditorStyles.boldLabel);
                 EditorGUILayout.Space();
-                DrawTimedFlag(IsProximityHovered, pressableButton.IsProximityHovered, previousGUIColor, Color.cyan);
+                DrawTimedFlags(IsProximityHovered, pressableButtons, previousGUIColor, Color.cyan);
             }
 
             EditorGUILayout.Space();
@@ -255,8 +291,18 @@ namespace MixedReality.Toolkit.Editor
                     if (EditorGUI.EndChangeCheck() && currentMode != distanceSpaceMode.intValue)
                     {
                         // Changing the DistanceSpaceMode requires updating the plane distance values so they stay in the same relative ratio positions
-                        Undo.RecordObject(target, string.Concat("Trigger Plane Distance Conversion of ", button.name));
-                        button.DistanceSpaceMode = (PressableButton.SpaceMode)distanceSpaceMode.intValue;
+                        if (buttons.Length == 1)
+                        {
+                            Undo.RecordObject(buttons[0], string.Concat("Trigger Plane Distance Conversion of ", buttons[0].name));
+                        }
+                        else
+                        {
+                            Undo.RecordObjects(buttons, "Trigger Plane Distance Conversion of multiple PressableButton");
+                        }
+                        foreach (PressableButton button in buttons)
+                        {
+                            button.DistanceSpaceMode = (PressableButton.SpaceMode)distanceSpaceMode.intValue;
+                        }
                         serializedObject.Update();
                     }
 
@@ -282,7 +328,7 @@ namespace MixedReality.Toolkit.Editor
 
             // editor settings
             {
-                EditorGUI.BeginDisabledGroup(Application.isPlaying == true);
+                EditorGUI.BeginDisabledGroup(Application.isPlaying);
                 editorFoldout = EditorGUILayout.Foldout(editorFoldout, EditorGUIUtility.TrTempContent("Button Editor Settings"), true, EditorStyles.foldoutHeader);
                 if (editorFoldout)
                 {
@@ -331,6 +377,7 @@ namespace MixedReality.Toolkit.Editor
 
         private void MakeQuadFromPoint(Vector3[] vertices, Vector3 centerWorld, Vector2 halfExtents, ButtonInfo info)
         {
+            Transform transform = info.PressableButton.transform;
             vertices[0] = transform.TransformVector((new Vector3(-halfExtents.x, -halfExtents.y, 0.0f))) + centerWorld;
             vertices[1] = transform.TransformVector((new Vector3(-halfExtents.x, +halfExtents.y, 0.0f))) + centerWorld;
             vertices[2] = transform.TransformVector((new Vector3(+halfExtents.x, +halfExtents.y, 0.0f))) + centerWorld;

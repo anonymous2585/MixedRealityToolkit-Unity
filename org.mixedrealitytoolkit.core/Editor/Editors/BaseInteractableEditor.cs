@@ -170,5 +170,32 @@ namespace MixedReality.Toolkit.Editor
 
             GUI.color = previousColor;
         }
+
+        /// <summary>
+        /// Draw multiples <see cref="TimedFlag"/> field as a single property (edit multiple object).
+        /// </summary>
+        protected void DrawTimedFlags(SerializedProperty property, TimedFlag[] timedFlag, Color previousColor, Color activeColor)
+        {
+            GUI.color = previousColor;
+
+            bool allActive = true;
+            foreach (TimedFlag flag in timedFlag)
+            {
+                if (!flag.Active)
+                {
+                    allActive = false;
+                    break;
+                }
+            }
+
+            if (allActive)
+            {
+                GUI.color = activeColor;
+            }
+
+            EditorGUILayout.PropertyField(property);
+
+            GUI.color = previousColor;
+        }
     }
 }

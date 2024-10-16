@@ -13,6 +13,9 @@ namespace MixedReality.Toolkit.Editor
     [CanEditMultipleObjects]
     public class StatefulInteractableEditor : BaseInteractableEditor
     {
+        protected StatefulInteractable[] Interactables { get; private set; }
+
+        private SerializedProperty IsInteractable;
         private SerializedProperty IsToggled;
         private SerializedProperty IsToggledStateActive;
         private SerializedProperty SelectThreshold;
@@ -41,6 +44,14 @@ namespace MixedReality.Toolkit.Editor
         protected override void OnEnable()
         {
             base.OnEnable();
+
+            Interactables = new StatefulInteractable[targets.Length];
+            for (int i = 0; i < targets.Length; i++)
+            {
+                Interactables[i] = targets[i] as StatefulInteractable;
+            }
+
+            IsInteractable = serializedObject.FindProperty("m_Enabled");
 
             IsToggled = SetUpAutoProperty(nameof(IsToggled));
             IsToggledStateActive = IsToggled.FindPropertyRelative("active");
@@ -88,16 +99,7 @@ namespace MixedReality.Toolkit.Editor
         protected void DrawProperties(bool showToggleMode)
         {
             EditorGUILayout.Space();
-
-            StatefulInteractable interactable = target as StatefulInteractable;
-
-            bool interactableActive = EditorGUILayout.Toggle(new GUIContent("Is Interactable", "Convenience alias for StatefulInteractable.enabled"), interactable.enabled);
-
-            if (interactableActive != (target as StatefulInteractable).enabled)
-            {
-                Undo.RecordObject(target, string.Concat("Set Interactable ", target.name));
-                interactable.enabled = interactableActive;
-            }
+            EditorGUILayout.PropertyField(IsInteractable, new GUIContent("Is Interactable", "Convenience alias for StatefulInteractable.enabled"));
 
             // Only show toggle settings if the subclass hasn't told us not to.
             // Some subclasses can choose to hide this section, as it won't be relevant.
@@ -116,8 +118,11 @@ namespace MixedReality.Toolkit.Editor
                         EditorGUILayout.PropertyField(IsToggledStateActive, new GUIContent("Is Toggled", "Directly set the internal IsToggled state at edit-time"));
                         if (EditorGUI.EndChangeCheck())
                         {
-                            // Actually set the toggle state with the public setter so that events fire.
-                            interactable.ForceSetToggled(IsToggledStateActive.boolValue);
+                            foreach (StatefulInteractable interactable in Interactables)
+                            {
+                                // Actually set the toggle state with the public setter so that events fire.
+                                interactable.ForceSetToggled(IsToggledStateActive.boolValue);
+                            }
                         }
                     }
                 }
@@ -185,14 +190,18 @@ namespace MixedReality.Toolkit.Editor
         protected override void DrawMRTKInteractableFlags()
         {
             Color previousGUIColor = GUI.color;
-            StatefulInteractable interactable = target as StatefulInteractable;
 
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
                 EditorGUILayout.LabelField("StatefulInteractable Events", EditorStyles.boldLabel);
                 EditorGUILayout.Space();
 
-                DrawTimedFlag(IsToggled, interactable.IsToggled, previousGUIColor, Color.cyan);
+                TimedFlag[] timedFlags = new TimedFlag[Interactables.Length];
+                for(int i = 0; i < Interactables.Length; i++)
+                {
+                    timedFlags[i] = Interactables[i].IsToggled;
+                }
+                DrawTimedFlags(IsToggled, timedFlags, previousGUIColor, Color.cyan);
                 
                 enabledEventsFoldout = EditorGUILayout.Foldout(enabledEventsFoldout, "OnEnable/Disable", true);
                 
