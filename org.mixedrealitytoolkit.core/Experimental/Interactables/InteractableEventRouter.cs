@@ -116,6 +116,7 @@ namespace MixedReality.Toolkit.Experimental
             {
                 childSources[i].ChildrenChanged.RemoveListener(ConnectAllEventRoutesToInteractables);
             }
+            childSources.Clear(); // Avoid "Leaked Manager Shell"
         }
 
         /// <summary>
@@ -136,6 +137,7 @@ namespace MixedReality.Toolkit.Experimental
                     }
                 }
             }
+            newInteractables.Clear(); // Avoid "Leaked Manager Shell"
         }
 
 
